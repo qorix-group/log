@@ -350,12 +350,25 @@
 #![deny(missing_debug_implementations, unconditional_recursion)]
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
 
+#[cfg(all(not(feature = "fatal"), any(
+    feature = "max_level_fatal",
+    feature = "release_max_level_fatal"
+)))]
+compile_error!("A fatal log level is enabled, but the `fatal` feature is not set. \
+                 Enable the `fatal` feature to use the fatal log level.");
+
 #[cfg(any(
+    all(feature = "max_level_off", feature = "max_level_fatal"),
     all(feature = "max_level_off", feature = "max_level_error"),
     all(feature = "max_level_off", feature = "max_level_warn"),
     all(feature = "max_level_off", feature = "max_level_info"),
     all(feature = "max_level_off", feature = "max_level_debug"),
     all(feature = "max_level_off", feature = "max_level_trace"),
+    all(feature = "max_level_fatal", feature = "max_level_error"),
+    all(feature = "max_level_fatal", feature = "max_level_warn"),
+    all(feature = "max_level_fatal", feature = "max_level_info"),
+    all(feature = "max_level_fatal", feature = "max_level_debug"),
+    all(feature = "max_level_fatal", feature = "max_level_trace"),
     all(feature = "max_level_error", feature = "max_level_warn"),
     all(feature = "max_level_error", feature = "max_level_info"),
     all(feature = "max_level_error", feature = "max_level_debug"),
@@ -371,11 +384,17 @@ compile_error!("multiple max_level_* features set");
 
 #[rustfmt::skip]
 #[cfg(any(
+    all(feature = "release_max_level_off", feature = "release_max_level_fatal"),
     all(feature = "release_max_level_off", feature = "release_max_level_error"),
     all(feature = "release_max_level_off", feature = "release_max_level_warn"),
     all(feature = "release_max_level_off", feature = "release_max_level_info"),
     all(feature = "release_max_level_off", feature = "release_max_level_debug"),
     all(feature = "release_max_level_off", feature = "release_max_level_trace"),
+    all(feature = "release_max_level_fatal", feature = "release_max_level_error"),
+    all(feature = "release_max_level_fatal", feature = "release_max_level_warn"),
+    all(feature = "release_max_level_fatal", feature = "release_max_level_info"),
+    all(feature = "release_max_level_fatal", feature = "release_max_level_debug"),
+    all(feature = "release_max_level_fatal", feature = "release_max_level_trace"),
     all(feature = "release_max_level_error", feature = "release_max_level_warn"),
     all(feature = "release_max_level_error", feature = "release_max_level_info"),
     all(feature = "release_max_level_error", feature = "release_max_level_debug"),
@@ -468,6 +487,10 @@ const INITIALIZED: usize = 2;
 
 static MAX_LOG_LEVEL_FILTER: AtomicUsize = AtomicUsize::new(0);
 
+#[cfg(feature = "fatal")]
+static LOG_LEVEL_NAMES: [&str; 7] = ["OFF", "FATAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
+
+#[cfg(not(feature = "fatal"))]
 static LOG_LEVEL_NAMES: [&str; 6] = ["OFF", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
 
 static SET_LOGGER_ERROR: &str = "attempted to set a logger after the logging system \
@@ -484,13 +507,18 @@ static LEVEL_PARSE_ERROR: &str =
 #[repr(usize)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub enum Level {
+    #[cfg(feature = "fatal")]
+    /// The "fatal" level.
+    ///
+    /// Designates fatal errors that cause the program to abort.
+    Fatal = 1,
     /// The "error" level.
     ///
     /// Designates very serious errors.
     // This way these line up with the discriminants for LevelFilter below
     // This works because Rust treats field-less enums the same way as C does:
     // https://doc.rust-lang.org/reference/items/enumerations.html#custom-discriminant-values-for-field-less-enumerations
-    Error = 1,
+    Error = if cfg!(feature = "fatal") { 2 } else { 1 },
     /// The "warn" level.
     ///
     /// Designates hazardous situations.
@@ -544,6 +572,20 @@ impl fmt::Display for Level {
 }
 
 impl Level {
+    #[cfg(feature = "fatal")]
+    fn from_usize(u: usize) -> Option<Level> {
+        match u {
+            1 => Some(Level::Fatal),
+            2 => Some(Level::Error),
+            3 => Some(Level::Warn),
+            4 => Some(Level::Info),
+            5 => Some(Level::Debug),
+            6 => Some(Level::Trace),
+            _ => None,
+        }
+    }
+
+    #[cfg(not(feature = "fatal"))]
     fn from_usize(u: usize) -> Option<Level> {
         match u {
             1 => Some(Level::Error),
@@ -577,10 +619,13 @@ impl Level {
     /// Iterate through all supported logging levels.
     ///
     /// The order of iteration is from more severe to less severe log messages.
+    /// In case you use the `fatal` cargo feature, Level::Fatal will be the first item in
+    /// the iterator, otherwise Level::Error will be the first item. The following example
+    /// is for the case when the `fatal` feature is not enabled, which is the default.
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// use log::Level;
     ///
     /// let mut levels = Level::iter();
@@ -589,7 +634,7 @@ impl Level {
     /// assert_eq!(Some(Level::Trace), levels.last());
     /// ```
     pub fn iter() -> impl Iterator<Item = Self> {
-        (1..6).map(|i| Self::from_usize(i).unwrap())
+            (1..LOG_LEVEL_NAMES.len()).map(|i| Self::from_usize(i).unwrap())
     }
 }
 
@@ -606,6 +651,9 @@ impl Level {
 pub enum LevelFilter {
     /// A level lower than all log levels.
     Off,
+    /// Corresponds to the `Fatal` log level.
+    #[cfg(feature = "fatal")]
+    Fatal,
     /// Corresponds to the `Error` log level.
     Error,
     /// Corresponds to the `Warn` log level.
@@ -650,6 +698,21 @@ impl fmt::Display for LevelFilter {
 }
 
 impl LevelFilter {
+    #[cfg(feature = "fatal")]
+    fn from_usize(u: usize) -> Option<LevelFilter> {
+        match u {
+            0 => Some(LevelFilter::Off),
+            1 => Some(LevelFilter::Fatal),
+            2 => Some(LevelFilter::Error),
+            3 => Some(LevelFilter::Warn),
+            4 => Some(LevelFilter::Info),
+            5 => Some(LevelFilter::Debug),
+            6 => Some(LevelFilter::Trace),
+            _ => None,
+        }
+    }
+
+    #[cfg(not(feature = "fatal"))]
     fn from_usize(u: usize) -> Option<LevelFilter> {
         match u {
             0 => Some(LevelFilter::Off),
@@ -698,7 +761,7 @@ impl LevelFilter {
     /// assert_eq!(Some(LevelFilter::Trace), levels.last());
     /// ```
     pub fn iter() -> impl Iterator<Item = Self> {
-        (0..6).map(|i| Self::from_usize(i).unwrap())
+        (0..LOG_LEVEL_NAMES.len()).map(|i| Self::from_usize(i).unwrap())
     }
 }
 
@@ -1306,11 +1369,13 @@ pub unsafe fn set_max_level_racy(level: LevelFilter) {
 
 /// Returns the current maximum log level.
 ///
-/// The [`log!`], [`error!`], [`warn!`], [`info!`], [`debug!`], and [`trace!`] macros check
-/// this value and discard any message logged at a higher level. The maximum
+/// The [`log!`], [`fatal!`], [`error!`], [`warn!`], [`info!`], [`debug!`], and [`trace!`]
+/// macros checkthis value and discard any message logged at a higher level. The maximum
 /// log level is set by the [`set_max_level`] function.
+/// The fatal level is only available when the `fatal` cargo feature is enabled.
 ///
 /// [`log!`]: macro.log.html
+/// [`fatal!`]: macro.error.html
 /// [`error!`]: macro.error.html
 /// [`warn!`]: macro.warn.html
 /// [`info!`]: macro.info.html
@@ -1535,12 +1600,16 @@ pub mod __private_api;
 /// [`logger`]: fn.logger.html
 pub const STATIC_MAX_LEVEL: LevelFilter = match cfg!(debug_assertions) {
     false if cfg!(feature = "release_max_level_off") => LevelFilter::Off,
+    #[cfg(feature = "fatal")]
+    false if cfg!(feature = "release_max_level_fatal") => LevelFilter::Fatal,
     false if cfg!(feature = "release_max_level_error") => LevelFilter::Error,
     false if cfg!(feature = "release_max_level_warn") => LevelFilter::Warn,
     false if cfg!(feature = "release_max_level_info") => LevelFilter::Info,
     false if cfg!(feature = "release_max_level_debug") => LevelFilter::Debug,
     false if cfg!(feature = "release_max_level_trace") => LevelFilter::Trace,
     _ if cfg!(feature = "max_level_off") => LevelFilter::Off,
+    #[cfg(feature = "fatal")]
+    _ if cfg!(feature = "max_level_fatal") => LevelFilter::Fatal,
     _ if cfg!(feature = "max_level_error") => LevelFilter::Error,
     _ if cfg!(feature = "max_level_warn") => LevelFilter::Warn,
     _ if cfg!(feature = "max_level_info") => LevelFilter::Info,
@@ -1556,12 +1625,16 @@ mod tests {
     fn test_levelfilter_from_str() {
         let tests = [
             ("off", Ok(LevelFilter::Off)),
+            #[cfg(feature = "fatal")]
+            ("fatal", Ok(LevelFilter::Fatal)),
             ("error", Ok(LevelFilter::Error)),
             ("warn", Ok(LevelFilter::Warn)),
             ("info", Ok(LevelFilter::Info)),
             ("debug", Ok(LevelFilter::Debug)),
             ("trace", Ok(LevelFilter::Trace)),
             ("OFF", Ok(LevelFilter::Off)),
+            #[cfg(feature = "fatal")]
+            ("FATAL", Ok(LevelFilter::Fatal)),
             ("ERROR", Ok(LevelFilter::Error)),
             ("WARN", Ok(LevelFilter::Warn)),
             ("INFO", Ok(LevelFilter::Info)),
@@ -1578,11 +1651,15 @@ mod tests {
     fn test_level_from_str() {
         let tests = [
             ("OFF", Err(ParseLevelError(()))),
+            #[cfg(feature = "fatal")]
+            ("fatal", Ok(Level::Fatal)),
             ("error", Ok(Level::Error)),
             ("warn", Ok(Level::Warn)),
             ("info", Ok(Level::Info)),
             ("debug", Ok(Level::Debug)),
             ("trace", Ok(Level::Trace)),
+            #[cfg(feature = "fatal")]
+            ("FATAL", Ok(Level::Fatal)),
             ("ERROR", Ok(Level::Error)),
             ("WARN", Ok(Level::Warn)),
             ("INFO", Ok(Level::Info)),
@@ -1598,6 +1675,8 @@ mod tests {
     #[test]
     fn test_level_as_str() {
         let tests = &[
+            #[cfg(feature = "fatal")]
+            (Level::Fatal, "FATAL"),
             (Level::Error, "ERROR"),
             (Level::Warn, "WARN"),
             (Level::Info, "INFO"),
@@ -1652,6 +1731,8 @@ mod tests {
     fn test_level_filter_as_str() {
         let tests = &[
             (LevelFilter::Off, "OFF"),
+            #[cfg(feature = "fatal")]
+            (LevelFilter::Fatal, "FATAL"),
             (LevelFilter::Error, "ERROR"),
             (LevelFilter::Warn, "WARN"),
             (LevelFilter::Info, "INFO"),
