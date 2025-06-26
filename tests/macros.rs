@@ -7,6 +7,8 @@ macro_rules! all_log_macros {
         ::log::info!($($arg)*);
         ::log::warn!($($arg)*);
         ::log::error!($($arg)*);
+        #[cfg(feature = "fatal")]
+        ::log::fatal!($($arg)*);
     });
 }
 

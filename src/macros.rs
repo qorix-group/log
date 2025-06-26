@@ -146,6 +146,46 @@ macro_rules! __log {
     });
 }
 
+/// Logs a message at the fatal level.
+///
+/// # Examples
+///
+/// ```
+/// use log::fatal;
+///
+/// # let my_logger = log::__private_api::GlobalLogger;
+/// let (err_info, port) = ("No connection", 22);
+///
+/// fatal!("Error: {err_info} on port {port}");
+/// fatal!(target: "app_events", "App Error: {err_info}, Port: {port}");
+/// fatal!(logger: my_logger, "App Error: {err_info}, Port: {port}");
+/// ```
+#[macro_export]
+#[clippy::format_args]
+#[cfg(feature = "fatal")]
+macro_rules! fatal {
+    // fatal!(logger: my_logger, target: "my_target", key1 = 42, key2 = true; "a {} event", "log")
+    // fatal!(logger: my_logger, target: "my_target", "a {} event", "log")
+    (logger: $logger:expr, target: $target:expr, $($arg:tt)+) => ({
+        $crate::log!(logger: $crate::__log_logger!($logger), target: $target, $crate::Level::Fatal, $($arg)+)
+    });
+
+    // fatal!(logger: my_logger, key1 = 42, key2 = true; "a {} event", "log")
+    // fatal!(logger: my_logger, "a {} event", "log")
+    (logger: $logger:expr, $($arg:tt)+) => ({
+        $crate::log!(logger: $crate::__log_logger!($logger), $crate::Level::Fatal, $($arg)+)
+    });
+
+    // fatal!(target: "my_target", key1 = 42, key2 = true; "a {} event", "log")
+    // fatal!(target: "my_target", "a {} event", "log")
+    (target: $target:expr, $($arg:tt)+) => ({
+        $crate::log!(target: $target, $crate::Level::Fatal, $($arg)+)
+    });
+
+    // fatal!("a {} event", "log")
+    ($($arg:tt)+) => ($crate::log!($crate::Level::Fatal, $($arg)+))
+}
+
 /// Logs a message at the error level.
 ///
 /// # Examples
