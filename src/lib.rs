@@ -837,6 +837,8 @@ pub struct Record<'a> {
     line: Option<u32>,
     #[cfg(feature = "kv")]
     key_values: KeyValues<'a>,
+    #[cfg(feature = "context")]
+    context_id: Option<&'a str>,
 }
 
 // This wrapper type is only needed so we can
@@ -948,6 +950,12 @@ impl<'a> Record<'a> {
             },
         }
     }
+
+    #[cfg(feature = "context")]
+    /// The context id associated with the message.
+    pub fn context_id(&self) -> Option<&str> {
+        self.context_id
+    }
 }
 
 /// Builder for [`Record`](struct.Record.html).
@@ -1018,6 +1026,8 @@ impl<'a> RecordBuilder<'a> {
                 line: None,
                 #[cfg(feature = "kv")]
                 key_values: KeyValues(&None::<(kv::Key, kv::Value)>),
+                #[cfg(feature = "context")]
+                context_id: None,
             },
         }
     }
@@ -1090,6 +1100,14 @@ impl<'a> RecordBuilder<'a> {
     #[inline]
     pub fn key_values(&mut self, kvs: &'a dyn kv::Source) -> &mut RecordBuilder<'a> {
         self.record.key_values = KeyValues(kvs);
+        self
+    }
+
+    /// Set the [`context id`](struct.Record.html#method.context_id) associated with the message.
+    #[cfg(feature = "context")]
+    #[inline]
+    pub fn context_id(&mut self, context_id: Option<&'a str>) -> &mut RecordBuilder<'a> {
+        self.record.context_id = context_id;
         self
     }
 

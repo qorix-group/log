@@ -59,6 +59,7 @@ fn log_impl<L: Log>(
     level: Level,
     &(target, module_path, loc): &(&str, &'static str, &'static Location),
     kvs: Option<&[(&str, Value)]>,
+    #[cfg(feature = "context")] context_id: Option<&'static str>,
 ) {
     #[cfg(not(feature = "kv"))]
     if kvs.is_some() {
@@ -77,6 +78,11 @@ fn log_impl<L: Log>(
 
     #[cfg(feature = "kv")]
     builder.key_values(&kvs);
+
+    #[cfg(feature = "context")]
+    if let Some(context_id) = context_id {
+        builder.context_id(Some(context_id));
+    }
 
     logger.log(&builder.build());
 }
@@ -97,6 +103,30 @@ pub fn log<'a, K, L>(
         level,
         target_module_path_and_loc,
         kvs.into_kvs(),
+        #[cfg(feature = "context")]
+        None,
+    )
+}
+
+#[cfg(feature = "context")]
+pub fn log_with_context<'a, K, L>(
+    logger: L,
+    args: Arguments,
+    level: Level,
+    target_module_path_and_loc: &(&str, &'static str, &'static Location),
+    kvs: K,
+    context_id: &'static str,
+) where
+    K: KVs<'a>,
+    L: Log,
+{
+    log_impl(
+        logger,
+        args,
+        level,
+        target_module_path_and_loc,
+        kvs.into_kvs(),
+        Some(context_id),
     )
 }
 
