@@ -520,7 +520,10 @@ pub enum Level {
     // This way these line up with the discriminants for LevelFilter below
     // This works because Rust treats field-less enums the same way as C does:
     // https://doc.rust-lang.org/reference/items/enumerations.html#custom-discriminant-values-for-field-less-enumerations
-    Error = if cfg!(feature = "fatal") { 2 } else { 1 },
+    #[cfg(feature = "fatal")]
+    Error = 2,
+    #[cfg(not(feature = "fatal"))]
+    Error = 1,
     /// The "warn" level.
     ///
     /// Designates hazardous situations.
@@ -1162,6 +1165,7 @@ impl Default for RecordBuilder<'_> {
 ///
 /// # fn main(){}
 /// ```
+
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct Metadata<'a> {
     level: Level,
@@ -1390,7 +1394,7 @@ pub unsafe fn set_max_level_racy(level: LevelFilter) {
 /// Returns the current maximum log level.
 ///
 /// The [`log!`], [`fatal!`], [`error!`], [`warn!`], [`info!`], [`debug!`], and [`trace!`]
-/// macros checkthis value and discard any message logged at a higher level. The maximum
+/// macros check this value and discard any message logged at a higher level. The maximum
 /// log level is set by the [`set_max_level`] function.
 /// The fatal level is only available when the `fatal` cargo feature is enabled.
 ///

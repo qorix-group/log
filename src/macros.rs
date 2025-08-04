@@ -267,7 +267,7 @@ macro_rules! fatal {
 
     // fatal!(context: "ctx42", "a {} event", "log")
     (context: $context_id:expr, $($arg:tt)+) => ({
-        $crate::log!(context: $context_id, $crate::Level::Error, $($arg)+)
+        $crate::log!(context: $context_id, $crate::Level::Fatal, $($arg)+)
     });
 
     // fatal!(target: "my_target", key1 = 42, key2 = true; "a {} event", "log")
