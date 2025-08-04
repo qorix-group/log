@@ -73,6 +73,50 @@
 #[macro_export]
 #[clippy::format_args]
 macro_rules! log {
+    // log!(logger: my_logger, target: "my_target", context: "ctx42", Level::Info, "a {} event", "log");
+    (logger: $logger:expr, target: $target:expr, context: $context_id:expr, $lvl:expr, $($arg:tt)+) => ({
+        $crate::__log!(
+            logger: $crate::__log_logger!($logger),
+            target: $target,
+            context: $context_id,
+            $lvl,
+            $($arg)+
+        )
+    });
+
+    // log!(logger: my_logger, context: "ctx42", Level::Info, "a log event")
+    (logger: $logger:expr, context: $context_id:expr, $lvl:expr, $($arg:tt)+) => ({
+        $crate::__log!(
+            logger: $crate::__log_logger!($logger),
+            target: $crate::__private_api::module_path!(),
+            context: $context_id,
+            $lvl,
+            $($arg)+
+        )
+    });
+
+    // log!(target: "my_target", context: "ctx42", Level::Info, "a log event")
+    (target: $target:expr, context: $context_id:expr, $lvl:expr, $($arg:tt)+) => ({
+        $crate::__log!(
+            logger: $crate::__log_logger!(__log_global_logger),
+            target: $target,
+            context: $context_id,
+            $lvl,
+            $($arg)+
+        )
+    });
+
+    // log!(context: "ctx42", Level::Info, "a log event")
+    (context: $context_id:expr, $lvl:expr, $($arg:tt)+) => ({
+        $crate::__log!(
+            logger: $crate::__log_logger!(__log_global_logger),
+            target: $crate::__private_api::module_path!(),
+            context: $context_id,
+            $lvl,
+            $($arg)+
+        )
+    });
+
     // log!(logger: my_logger, target: "my_target", Level::Info, "a {} event", "log");
     (logger: $logger:expr, target: $target:expr, $lvl:expr, $($arg:tt)+) => ({
         $crate::__log!(
@@ -117,6 +161,36 @@ macro_rules! log {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __log {
+    // __log!(logger: my_logger, target: "my_target", context: "ctx42", Level::Info, key1:? = 42, key2 = true; "a {} event", "log");
+    (logger: $logger:expr, target: $target:expr, context: $context_id:expr, $lvl:expr, $($key:tt $(:$capture:tt)? $(= $value:expr)?),+; $($arg:tt)+) => ({
+        let lvl = $lvl;
+        if lvl <= $crate::STATIC_MAX_LEVEL && lvl <= $crate::max_level() {
+            $crate::__private_api::log_with_context(
+                $logger,
+                $crate::__private_api::format_args!($($arg)+),
+                lvl,
+                &($target, $crate::__private_api::module_path!(), $crate::__private_api::loc()),
+                &[$(($crate::__log_key!($key), $crate::__log_value!($key $(:$capture)* = $($value)*))),+] as &[_],
+                $context_id,
+            );
+        }
+    });
+
+    // __log!(logger: my_logger, target: "my_target", context: "ctx42", Level::Info, "a {} event", "log");
+    (logger: $logger:expr, target: $target:expr, context: $context_id:expr, $lvl:expr, $($arg:tt)+) => ({
+        let lvl = $lvl;
+        if lvl <= $crate::STATIC_MAX_LEVEL && lvl <= $crate::max_level() {
+            $crate::__private_api::log_with_context(
+                $logger,
+                $crate::__private_api::format_args!($($arg)+),
+                lvl,
+                &($target, $crate::__private_api::module_path!(), $crate::__private_api::loc()),
+                (),
+                $context_id,
+            );
+        }
+    });
+
     // log!(logger: my_logger, target: "my_target", Level::Info, key1:? = 42, key2 = true; "a {} event", "log");
     (logger: $logger:expr, target: $target:expr, $lvl:expr, $($key:tt $(:$capture:tt)? $(= $value:expr)?),+; $($arg:tt)+) => ({
         let lvl = $lvl;
@@ -146,6 +220,66 @@ macro_rules! __log {
     });
 }
 
+/// Logs a message at the fatal level.
+///
+/// # Examples
+///
+/// ```
+/// use log::fatal;
+///
+/// # let my_logger = log::__private_api::GlobalLogger;
+/// let (err_info, port) = ("No connection", 22);
+///
+/// fatal!("Error: {err_info} on port {port}");
+/// fatal!(target: "app_events", "App Error: {err_info}, Port: {port}");
+/// fatal!(logger: my_logger, "App Error: {err_info}, Port: {port}");
+/// ```
+#[macro_export]
+#[clippy::format_args]
+#[cfg(feature = "fatal")]
+macro_rules! fatal {
+    // fatal!(logger: my_logger, target: "my_target", key1 = 42, key2 = true; "a {} event", "log")
+    // fatal!(logger: my_logger, target: "my_target", "a {} event", "log")
+    (logger: $logger:expr, target: $target:expr, $($arg:tt)+) => ({
+        $crate::log!(logger: $crate::__log_logger!($logger), target: $target, $crate::Level::Fatal, $($arg)+)
+    });
+
+    // fatal!(logger: my_logger, key1 = 42, key2 = true; "a {} event", "log")
+    // fatal!(logger: my_logger, "a {} event", "log")
+    (logger: $logger:expr, $($arg:tt)+) => ({
+        $crate::log!(logger: $crate::__log_logger!($logger), $crate::Level::Fatal, $($arg)+)
+    });
+
+    // fatal!(logger: my_logger, target: "my_target", context: "ctx42", "a {} event", "log")
+    (logger: $logger:expr, target: $target:expr, context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(logger: $crate::__log_logger!($logger), target: $target, context: $context_id, $crate::Level::Fatal, $($arg)+)
+    });
+
+    // fatal!(logger: my_logger, context: "ctx42", "a {} event", "log")
+    (logger: $logger:expr, context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(logger: $crate::__log_logger!($logger), context: $context_id, $crate::Level::Fatal, $($arg)+)
+    });
+
+    // fatal!(target: "my_target", context: "ctx42", "a {} event", "log")
+    (target: $target:expr, context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(target: $target, context: $context_id, $crate::Level::Fatal, $($arg)+)
+    });
+
+    // fatal!(context: "ctx42", "a {} event", "log")
+    (context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(context: $context_id, $crate::Level::Fatal, $($arg)+)
+    });
+
+    // fatal!(target: "my_target", key1 = 42, key2 = true; "a {} event", "log")
+    // fatal!(target: "my_target", "a {} event", "log")
+    (target: $target:expr, $($arg:tt)+) => ({
+        $crate::log!(target: $target, $crate::Level::Fatal, $($arg)+)
+    });
+
+    // fatal!("a {} event", "log")
+    ($($arg:tt)+) => ($crate::log!($crate::Level::Fatal, $($arg)+))
+}
+
 /// Logs a message at the error level.
 ///
 /// # Examples
@@ -173,6 +307,26 @@ macro_rules! error {
     // error!(logger: my_logger, "a {} event", "log")
     (logger: $logger:expr, $($arg:tt)+) => ({
         $crate::log!(logger: $crate::__log_logger!($logger), $crate::Level::Error, $($arg)+)
+    });
+
+    // error!(logger: my_logger, target: "my_target", context: "ctx42", "a {} event", "log")
+    (logger: $logger:expr, target: $target:expr, context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(logger: $crate::__log_logger!($logger), target: $target, context: $context_id, $crate::Level::Error, $($arg)+)
+    });
+
+    // error!(logger: my_logger, context: "ctx42", "a {} event", "log")
+    (logger: $logger:expr, context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(logger: $crate::__log_logger!($logger), context: $context_id, $crate::Level::Error, $($arg)+)
+    });
+
+    // error!(target: "my_target", context: "ctx42", "a {} event", "log")
+    (target: $target:expr, context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(target: $target, context: $context_id, $crate::Level::Error, $($arg)+)
+    });
+
+    // error!(context: "ctx42", "a {} event", "log")
+    (context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(context: $context_id, $crate::Level::Error, $($arg)+)
     });
 
     // error!(target: "my_target", key1 = 42, key2 = true; "a {} event", "log")
@@ -212,6 +366,26 @@ macro_rules! warn {
     // warn!(logger: my_logger, "a {} event", "log")
     (logger: $logger:expr, $($arg:tt)+) => ({
         $crate::log!(logger: $crate::__log_logger!($logger), $crate::Level::Warn, $($arg)+)
+    });
+
+    // warn!(logger: my_logger, target: "my_target", context: "ctx42", "a {} event", "log")
+    (logger: $logger:expr, target: $target:expr, context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(logger: $crate::__log_logger!($logger), target: $target, context: $context_id, $crate::Level::Warn, $($arg)+)
+    });
+
+    // warn!(logger: my_logger, context: "ctx42", "a {} event", "log")
+    (logger: $logger:expr, context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(logger: $crate::__log_logger!($logger), context: $context_id, $crate::Level::Warn, $($arg)+)
+    });
+
+    // warn!(target: "my_target", context: "ctx42", "a {} event", "log")
+    (target: $target:expr, context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(target: $target, context: $context_id, $crate::Level::Warn, $($arg)+)
+    });
+
+    // warn!(context: "ctx42", "a {} event", "log")
+    (context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(context: $context_id, $crate::Level::Warn, $($arg)+)
     });
 
     // warn!(target: "my_target", key1 = 42, key2 = true; "a {} event", "log")
@@ -262,6 +436,26 @@ macro_rules! info {
         $crate::log!(logger: $crate::__log_logger!($logger), $crate::Level::Info, $($arg)+)
     });
 
+    // info!(logger: my_logger, target: "my_target", context: "ctx42", "a {} event", "log")
+    (logger: $logger:expr, target: $target:expr, context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(logger: $crate::__log_logger!($logger), target: $target, context: $context_id, $crate::Level::Info, $($arg)+)
+    });
+
+    // info!(logger: my_logger, context: "ctx42", "a {} event", "log")
+    (logger: $logger:expr, context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(logger: $crate::__log_logger!($logger), context: $context_id, $crate::Level::Info, $($arg)+)
+    });
+
+    // info!(target: "my_target", context: "ctx42", "a {} event", "log")
+    (target: $target:expr, context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(target: $target, context: $context_id, $crate::Level::Info, $($arg)+)
+    });
+
+    // info!(context: "ctx42", "a {} event", "log")
+    (context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(context: $context_id, $crate::Level::Info, $($arg)+)
+    });
+
     // info!(target: "my_target", key1 = 42, key2 = true; "a {} event", "log")
     // info!(target: "my_target", "a {} event", "log")
     (target: $target:expr, $($arg:tt)+) => ({
@@ -300,6 +494,26 @@ macro_rules! debug {
     // debug!(logger: my_logger, "a {} event", "log")
     (logger: $logger:expr, $($arg:tt)+) => ({
         $crate::log!(logger: $crate::__log_logger!($logger), $crate::Level::Debug, $($arg)+)
+    });
+
+    // debug!(logger: my_logger, target: "my_target", context: "ctx42", "a {} event", "log")
+    (logger: $logger:expr, target: $target:expr, context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(logger: $crate::__log_logger!($logger), target: $target, context: $context_id, $crate::Level::Debug, $($arg)+)
+    });
+
+    // debug!(logger: my_logger, context: "ctx42", "a {} event", "log")
+    (logger: $logger:expr, context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(logger: $crate::__log_logger!($logger), context: $context_id, $crate::Level::Debug, $($arg)+)
+    });
+
+    // debug!(target: "my_target", context: "ctx42", "a {} event", "log")
+    (target: $target:expr, context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(target: $target, context: $context_id, $crate::Level::Debug, $($arg)+)
+    });
+
+    // debug!(context: "ctx42", "a {} event", "log")
+    (context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(context: $context_id, $crate::Level::Debug, $($arg)+)
     });
 
     // debug!(target: "my_target", key1 = 42, key2 = true; "a {} event", "log")
@@ -344,6 +558,26 @@ macro_rules! trace {
     // trace!(logger: my_logger, "a {} event", "log")
     (logger: $logger:expr, $($arg:tt)+) => ({
         $crate::log!(logger: $crate::__log_logger!($logger), $crate::Level::Trace, $($arg)+)
+    });
+
+    // trace!(logger: my_logger, target: "my_target", context: "ctx42", "a {} event", "log")
+    (logger: $logger:expr, target: $target:expr, context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(logger: $crate::__log_logger!($logger), target: $target, context: $context_id, $crate::Level::Trace, $($arg)+)
+    });
+
+    // trace!(logger: my_logger, context: "ctx42", "a {} event", "log")
+    (logger: $logger:expr, context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(logger: $crate::__log_logger!($logger), context: $context_id, $crate::Level::Trace, $($arg)+)
+    });
+
+    // trace!(target: "my_target", context: "ctx42", "a {} event", "log")
+    (target: $target:expr, context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(target: $target, context: $context_id, $crate::Level::Trace, $($arg)+)
+    });
+
+    // trace!(context: "ctx42", "a {} event", "log")
+    (context: $context_id:expr, $($arg:tt)+) => ({
+        $crate::log!(context: $context_id, $crate::Level::Trace, $($arg)+)
     });
 
     // trace!(target: "my_target", key1 = 42, key2 = true; "a {} event", "log")
